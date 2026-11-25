@@ -17,7 +17,15 @@ A workspace's ⋯ menu offers **置顶工作区** / **取消置顶**. Pinned wor
 
 DSH already draws a green dot on a conversation that finished while you were looking elsewhere. A folded workspace hides its rows, and that signal disappears with them — so the marker moves to the workspace header: a dot when one conversation finished, a count when several did. Expanding the group removes it, because the rows show their own dots again.
 
-The marker reads the same `uiSession.sessionStatus` snapshot the rows read, so the two can never disagree. It is decoration only: `aria-hidden`, and it never intercepts a click.
+## Completion marks survive a restart
+
+DSH keeps `completionUnread` in memory, so every dot vanished when DSH exited. This plugin keeps a durable copy in the browser:
+
+- a conversation is marked when it stops running while you are not looking at it;
+- the mark clears **only** when you open that conversation, or when it runs again;
+- marks for deleted conversations are pruned, but never before the session list has loaded — so a cold start cannot wipe them.
+
+The marker is decoration only: `aria-hidden`, and it never intercepts a click.
 
 ## What it actually does
 

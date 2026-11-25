@@ -32,6 +32,88 @@ window.__ModuleLoader__.load({
       noticeTimer = setTimeout(() => { noticeTimer = null; patch({ notice: null }); }, 4000);
     }
 
+    /* ------------------- persistent completion marks ------------------ *
+     * `completionUnread` lives only in the client's memory, so every marker
+     * disappears when DSH exits. This keeps our own durable copy: a session is
+     * marked when it stops running while not open, and the mark is cleared only
+     * by opening that session (or by it running again).
+     */
+    const UNREAD_KEY = 'dsh.workspaceMove.unreadCompletions';
+
+    function readUnread() {
+      try {
+        const raw = window.localStorage.getItem(UNREAD_KEY);
+        const parsed = raw === null ? [] : JSON.parse(raw);
+        return new Set(Array.isArray(parsed) ? parsed.map(String) : []);
+      } catch (_) {
+        return new Set();
+      }
+    }
+
+    function writeUnread(set) {
+      try {
+        window.localStorage.setItem(UNREAD_KEY, JSON.stringify(Array.from(set)));
+      } catch (_) { /* ignore */ }
+    }
+
+    /** Union of the durable set and the live snapshot, so either source alone marks a row. */
+    function unreadSet(statuses) {
+      const marks = readUnread();
+      if (statuses) {
+        for (const [sessionId, status] of statuses) {
+          if (status && status.completionUnread === true) marks.add(String(sessionId));
+        }
+      }
+      return marks;
+    }
+
+    /** Drop one session from the durable set; the caller already checked it was marked. */
+    function clearUnread(sessionId) {
+      const marks = readUnread();
+      if (!marks.delete(String(sessionId))) return false;
+      writeUnread(marks);
+      return true;
+    }
+
+    /**
+     * Fold the live snapshot into the durable set.
+     * A session is durable-unread when the client says so, or when it is not
+     * running and not the open conversation; either way it leaves the set once
+     * it runs again or becomes the main view.
+     * @param statuses - the live status snapshot, or null when unavailable.
+     * @param knownIds - every session id the sidebar currently knows, used to prune marks whose session is gone.
+     * @param openIds - sessions currently open in the main view, which count as acknowledged.
+     * @returns whether the durable set changed, so callers repaint only then.
+     */
+    function persistFromStatus(statuses, knownIds, openIds) {
+      const marks = readUnread();
+      let changed = false;
+      if (statuses) {
+        for (const [sessionId, status] of statuses) {
+          if (!status) continue;
+          const id = String(sessionId);
+          if (status.completionUnread === true && !marks.has(id)) { marks.add(id); changed = true; }
+          else if (marks.has(id) && status.running === true) { marks.delete(id); changed = true; }
+        }
+      }
+      // Opening a conversation acknowledges it, however it was opened.
+      if (openIds) {
+        for (const id of openIds) {
+          if (marks.delete(String(id))) changed = true;
+        }
+      }
+      // Prune marks whose conversation no longer exists — but ONLY against a
+      // settled list. An empty id set during startup would otherwise wipe every
+      // durable mark, which is exactly the state this feature exists to keep.
+      if (knownIds !== null && knownIds.size > 0) {
+        for (const id of Array.from(marks)) {
+          if (!knownIds.has(id)) { marks.delete(id); changed = true; }
+        }
+      }
+      if (changed) writeUnread(marks);
+      return changed;
+    }
+
     const bridge = { move: null, close: null, workspaces: null, sessionsList: null, togglePin: null, isPinned: null };
 
     const CSS = `
@@ -77,6 +159,10 @@ window.__ModuleLoader__.load({
 /* The header's text cell is a column so long titles wrap; lay it out as a row
    while a marker is present so the dot sits beside the name, not under it. */
 .wsm-group-marked{flex-direction:row !important;align-items:center !important;gap:0 !important}
+
+/* Durable completion dot, rendered through the leading cell the shipped row
+   leaves free while its own status is idle. */
+.wsm-row-dot{display:inline-block;flex:0 0 auto;width:6px;height:6px;border-radius:50%;background:var(--dsw-alias-state-success-primary,#3fb950);pointer-events:none}
 
 `;
 
@@ -214,11 +300,13 @@ window.__ModuleLoader__.load({
      */
     function paintGroupMarks(workspaces, statuses) {
       clearGroupMarks();
+      const marks = unreadSet(statuses);
+      if (marks.size === 0) return;
       for (const workspace of workspaces) {
         const sessionIds = Array.isArray(workspace.sessionIds) ? workspace.sessionIds : [];
         let count = 0;
         for (const sessionId of sessionIds) {
-          if (statuses.get(sessionId)?.completionUnread === true) count += 1;
+          if (marks.has(String(sessionId))) count += 1;
         }
         if (count === 0) continue;
         const header = document.querySelector('[data-row-key="workspace:' + String(workspace.workspaceId) + '"]');
@@ -239,7 +327,24 @@ window.__ModuleLoader__.load({
       }
     }
 
-    /* ---------------------- workspace pinning ------------------------- */
+        /* -------------------- durable row completion ---------------------- */
+    // The shipped row draws its green dot from memory only, so a restart loses
+    // it. `sidebar.session.row.leading` is the cell the shipped row leaves free
+    // exactly while its primary status is idle — which is precisely the case a
+    // durable mark covers, so the two never draw together.
+    function RowDot(props) {
+      // Subscribe so a mark change (or its acknowledgement) repaints the row.
+      useStore();
+      const sessionId = props.sessionId;
+      if (sessionId === undefined) return null;
+      if (!readUnread().has(String(sessionId))) return null;
+      return h('span', {
+        className: 'wsm-row-dot',
+        'aria-hidden': 'true',
+        title: '已完成，尚未查看',
+      });
+    }
+/* ---------------------- workspace pinning ------------------------- */
     const PIN_STORAGE_KEY = 'dsh.workspaceMove.pinnedWorkspaces';
 
     function readPins() {
@@ -511,6 +616,10 @@ window.__ModuleLoader__.load({
           name: 'sidebar.workspaces.session.row.action', id: 'workspace-move', order: 150,
         }, RowAction));
 
+        ctx.slots.inject('sidebar.session.row.leading', () => ctx.slots.register({
+          name: 'sidebar.session.row.leading', id: 'workspace-move-unread', order: 10,
+        }, RowDot));
+
         ctx.slots.inject('sidebar.workspaces.session.menu.item', () => ctx.slots.register({
           name: 'sidebar.workspaces.session.menu.item', id: 'workspace-move', order: 520,
         }, MenuItem));
@@ -608,7 +717,7 @@ window.__ModuleLoader__.load({
         });
         void applyPinOrder();
 
-        /* --- Collapsed-group completion markers ----------------------- *
+        /* --- Durable completion markers -------------------------------- *
          * Repaint whenever the status snapshot, the workspace list, or the
          * sidebar's own DOM changes (expanding a group removes its marker,
          * collapsing one brings it back).                                   */
@@ -618,10 +727,25 @@ window.__ModuleLoader__.load({
           if (markTimer !== null) return;
           markTimer = setTimeout(() => {
             markTimer = null;
-            if (uiSession === undefined) return;
+            const statuses = uiSession === undefined ? null : uiSession.sessionStatus.getSnapshot();
+            let list = { ids: [], byId: {}, phase: 'pending' };
+            try { list = sessions.list.getSnapshot(); } catch (_) { /* ignore */ }
+            const settled = list.phase === 'ready';
+            const knownIds = settled ? new Set((list.ids || []).map(String)) : null;
+            const openIds = [];
+            for (const id of list.ids || []) {
+              if (((list.byId[id] || {}).retainedBy || {}).mainView > 0) openIds.push(id);
+            }
+            // Keep the durable set in step with the live one: a session that
+            // just stopped while unopened becomes unread here too, and one that
+            // is running again or currently open is no longer unread.
+            const marksChanged = persistFromStatus(statuses, knownIds, openIds);
             let snapshot = { items: [] };
-            try { snapshot = workspaces.list.getSnapshot(); } catch (_) { return; }
-            paintGroupMarks(snapshot.items || [], uiSession.sessionStatus.getSnapshot());
+            try { snapshot = workspaces.list.getSnapshot(); } catch (_) { snapshot = { items: [] }; }
+            paintGroupMarks(snapshot.items || [], statuses);
+            // Repaint row dots only when the durable set actually changed, so a
+            // plain DOM mutation cannot loop back into another render.
+            if (marksChanged) emit();
           }, 60);
         };
 
@@ -629,19 +753,32 @@ window.__ModuleLoader__.load({
           ? () => {}
           : uiSession.sessionStatus.subscribe(scheduleMarks);
         const listCleanup = workspaces.list.subscribe(scheduleMarks);
-        // Group expansion is the browser's own state, so watch the rows instead
-        // of reaching into its store.
+        // Group expansion and row selection are the browser's own state, so
+        // watch the DOM instead of reaching into its stores.
         const observer = typeof MutationObserver === 'function'
           ? new MutationObserver(() => { scheduleMarks(); })
           : null;
         if (observer !== null) {
           observer.observe(document.body, {
-            subtree: true, childList: true, attributes: true, attributeFilter: ['aria-expanded'],
+            subtree: true, childList: true, attributes: true,
+            attributeFilter: ['aria-expanded', 'aria-selected'],
           });
         }
+        // Opening a conversation acknowledges it: drop its durable mark at once
+        // so the dot does not survive the click.
+        const onClick = (event) => {
+          const target = event.target;
+          if (!target || typeof target.closest !== 'function') return;
+          const row = target.closest('[data-row-key^="session:"]');
+          if (!row) return;
+          const id = (row.getAttribute('data-row-key') || '').slice('session:'.length);
+          if (id && clearUnread(id)) scheduleMarks();
+        };
+        document.addEventListener('click', onClick, true);
         ctx.effect(() => () => {
           statusCleanup();
           listCleanup();
+          document.removeEventListener('click', onClick, true);
           if (observer !== null) observer.disconnect();
           if (markTimer !== null) { clearTimeout(markTimer); markTimer = null; }
           clearGroupMarks();

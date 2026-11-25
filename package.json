@@ -1,6 +1,6 @@
 {
   "name": "@junerver/dsh-workspace",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "description": "DSH plugin: move a conversation into a directory workspace from the sidebar (drag or menu).",
   "type": "module",
   "private": false,

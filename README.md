@@ -34,6 +34,17 @@ DSH already draws a green dot on a conversation that finished while you were loo
 
 The marker reads the same `uiSession.sessionStatus` snapshot the rows read, so the two can never disagree. It is decoration only: `aria-hidden`, and it never intercepts a click.
 
+### Completion marks survive a restart
+
+DSH keeps `completionUnread` in memory, so every dot — on a row and on a workspace header — vanished when DSH exited. This plugin keeps its own durable copy in `localStorage` (`dsh.workspaceMove.unreadCompletions`):
+
+- a conversation becomes marked when it stops running while you are not looking at it;
+- the mark is cleared **only** by opening that conversation, or by it running again;
+- marks whose conversation no longer exists are pruned, so the set stays small;
+- pruning is skipped until the session list has settled, so a cold start cannot wipe the marks before the list arrives.
+
+Row dots render through `sidebar.session.row.leading`, the cell the shipped row leaves free exactly while its own status is idle — so the durable dot and the built-in one never draw together.
+
 ## How it works
 
 Because the session header cannot be rewritten in place, a move is a **safe migration copy**:

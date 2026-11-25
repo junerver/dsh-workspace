@@ -146,11 +146,12 @@ await check('client.js loads through the module loader and registers its slots',
   for (const slot of [
     'sidebar.workspaces.session.row.action',
     'sidebar.workspaces.session.menu.item',
+    'sidebar.session.row.leading',
     'shell.overlay',
   ]) {
     assert(source.includes(`'${slot}'`), `client.js never registers into ${slot}`)
   }
-  return `${spec.id}; 3 slots`
+  return `${spec.id}; 4 slots`
 })
 
 await check('the Host half imports nothing from the DSH installation', () => {
