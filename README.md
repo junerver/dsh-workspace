@@ -1,6 +1,13 @@
 # dsh-workspace
 
-A DeepSeek Harness (DSH) plugin bundle that lets you **move a conversation into a directory workspace from the sidebar** — by dragging the row onto a workspace, or from the row's menu.
+A [DeepSeek Harness](https://github.com/deepseek-ai) (DSH) plugin bundle that lets you **move a conversation into a directory workspace from the sidebar** — by dragging the row onto a workspace, or from the row's menu.
+
+```bash
+# install into a DSH profile
+dsh plugin add @junerver/dsh-workspace
+```
+
+<sub>Not sure of your install route? The bundle also installs from a local directory through **Plugins → Add plugin**.</sub>
 
 ## Why this exists
 
@@ -8,19 +15,9 @@ DSH decides which workspace a session belongs to by comparing the session header
 
 This plugin fills that gap.
 
-## Install
-
-The bundle is installed from a local directory through **Plugins → Add plugin** (or `plugin_manager` `install_bundle`). The directory must contain `package.json`, `cordis.patch.yml`, `index.js`, `client.js`, `locale/`, `docs/` and `icon.svg`.
-
-```
-E:\GitHub\dsh-workspace
-```
-
-After installing, restart DSH once: the bundle adds both a Host plugin row and a Web client module.
-
 ## Usage
 
-- **Drag** — press and drag any conversation row in the sidebar, move over a target workspace group (its header, or any conversation inside it). The group highlights; release to move.
+- **Drag** — press and drag any conversation row in the sidebar, then move over a target workspace group (its header, or any conversation inside it). The group highlights; release to move.
 - **Menu** — hover the row and click the folder-arrow button, or open the row's `⋯` menu and choose **Move to workspace…**, then pick a workspace.
 
 A short toast confirms the result at the top of the window, naming the target workspace.
@@ -44,7 +41,7 @@ Nothing is overwritten: the source log stays intact, and unarchiving it from **V
 | Host command | `/move-workspace-to <workspaceId>` | Driven by the sidebar through the existing `commands.execute` Remote bridge. |
 | Agent tool | `move_session_to_workspace` | `session_id`, `workspace_id`, optional `dry_run` to preview the plan. |
 
-The seed is built from plain JSON values and the migration always cuts at a `turn/end`, so the inherited prefix is balanced and needs no synthetic turn closers. The bundle imports nothing from the DSH installation — a workspace-linked bundle cannot resolve those specifiers through Node.
+The seed is built from plain JSON values and the migration always cuts at a `turn/end`, so the inherited prefix is balanced and needs no synthetic turn closers. The bundle imports nothing from the DSH installation — a bundle resolved from a registry has no route to `@deepseek-ai/*`, so every service is reached through `ctx`.
 
 ### Client side
 
@@ -65,6 +62,46 @@ Drag targeting resolves against the sidebar's own structural keys — `data-row-
 - A session with no completed turn cannot be migrated.
 - Sessions already in the target workspace are left untouched.
 
+## Development
+
+No build step — the published files are the sources.
+
+```bash
+npm run check      # bundle structure, module faces, patch, locales
+npm run pack:dry   # inspect the tarball contents
+```
+
+### Release
+
+Releases are published from GitHub Actions over OIDC ([npm trusted publishing](https://docs.npmjs.com/trusted-publishers/)), so no `NPM_TOKEN` secret exists in this repository.
+
+1. Bump `version` in `package.json` and commit.
+2. Push a matching tag:
+   ```bash
+   git tag v1.0.5 && git push origin v1.0.5
+   ```
+3. `.github/workflows/publish.yml` verifies the tag against the manifest, runs `npm run check`, and publishes with provenance.
+
+**The very first version must be published by hand** — npm has no pending-publisher state, so a trusted publisher can only be configured for a package that already exists:
+
+```bash
+npm login
+npm publish --access public
+```
+
+Then, on npmjs.com → the package → **Settings → Trusted publisher**, add:
+
+| Field | Value |
+| --- | --- |
+| Publisher | GitHub Actions |
+| Organization / user | `junerver` |
+| Repository | `dsh-workspace` |
+| Workflow filename | `publish.yml` |
+| Environment | *(leave empty)* |
+| Allowed actions | `npm publish` **and** `npm stage publish` |
+
+Every field is case-sensitive and is not validated when saved — a mismatch surfaces only as a 404 at publish time. A newly added trusted publisher expires unless its first publish succeeds within two days.
+
 ## Files
 
 ```
@@ -76,4 +113,9 @@ locale/en.json        Plugin Manager title/description (English)
 locale/zh.json        Plugin Manager title/description (Chinese)
 docs/DETAIL.md        Detail page shown in Plugin Manager
 icon.svg              Plugin icon
+scripts/check.mjs     Offline structure and module-face checks (CI)
 ```
+
+## License
+
+MIT

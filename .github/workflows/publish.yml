@@ -1,0 +1,65 @@
+name: Publish to npm
+
+# Triggered by a version tag: `git tag v1.0.4 && git push origin v1.0.4`.
+# The tag must match the version in package.json (checked below).
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+  id-token: write   # OIDC token for npm trusted publishing + provenance
+
+concurrency:
+  group: publish-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # 注意：不要设置 registry-url。setup-node 会向 ~/.npmrc 写入
+      # `//registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN}` 占位符，npm 会把它视为
+      # 「已配置凭据」而跳过 OIDC 交换，trusted publishing 会以 404/401 失败。
+      #
+      # trusted publishing 需要 npm >= 11.5.1；Node 24 自带 11.x，因此这里不升级 npm。
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          package-manager-cache: false
+
+      - name: 确认 npm 版本支持 trusted publishing
+        run: |
+          node -e "
+          const [major, minor, patch] = require('child_process')
+            .execSync('npm --version').toString().trim().split('.').map(Number)
+          if (major < 11 || (major === 11 && (minor < 5 || (minor === 5 && patch < 1)))) {
+            throw new Error('npm ' + major + '.' + minor + '.' + patch + ' < 11.5.1')
+          }
+          console.log('npm', major + '.' + minor + '.' + patch, 'supports trusted publishing')
+          "
+
+      # 只写 registry 行、不写 authToken 行：npm 需要 registry 条目发起 OIDC 交换
+      - name: 配置 registry
+        run: npm config set registry https://registry.npmjs.org
+
+      - name: 校验 tag 与 package.json 版本一致
+        run: |
+          node -e "
+          const pkg = require('./package.json')
+          const tag = process.env.GITHUB_REF_NAME.replace(/^v/, '')
+          if (tag !== pkg.version) {
+            throw new Error('tag ' + tag + ' does not match package.json version ' + pkg.version)
+          }
+          console.log('tag', tag, 'matches', pkg.name)
+          "
+
+      - name: 校验 bundle 结构
+        run: npm run check
+
+      # prepublishOnly 会再跑一次 check；OIDC 交换由 npm 自动完成，provenance 自动附带
+      - name: 发布
+        run: npm publish --provenance --access public

@@ -1,5 +1,5 @@
 window.__ModuleLoader__.load({
-  id: '@local/workspace-move',
+  id: '@junerver/dsh-workspace',
   factory(require) {
     const React = require('react');
     const h = React.createElement;

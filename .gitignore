@@ -1,6 +1,12 @@
 # Dependencies
 node_modules/
 
+# Local npm cache (used when the user cache is not writable)
+.npm-cache/
+
+# Packed tarballs
+*.tgz
+
 # Logs
 *.log
 npm-debug.log*

@@ -220,18 +220,26 @@ export function apply(ctx) {
       render: (_args, value) => [{ type: 'text', text: JSON.stringify(value, null, 2) }],
     },
     async execute(args) {
-      using observation = await ctx.sessionQuery.observeSession(args.session_id)
-      const preset = observation.projections === undefined
-        ? undefined
-        : observation.projections.values.agentPreset
-      const result = await migrate(
-        ctx,
-        { id: observation.header.id, events: observation.events, preset },
-        args.workspace_id,
-        args.dry_run === true,
-      )
-      if (!result.ok) throw new Error(result.error)
-      return result
+      // Explicit disposal instead of `using`, so the file parses on every Node
+      // the registry might run it under, not only those with explicit resource
+      // management.
+      const observation = await ctx.sessionQuery.observeSession(args.session_id)
+      try {
+        const preset = observation.projections === undefined
+          ? undefined
+          : observation.projections.values.agentPreset
+        const result = await migrate(
+          ctx,
+          { id: observation.header.id, events: observation.events, preset },
+          args.workspace_id,
+          args.dry_run === true,
+        )
+        if (!result.ok) throw new Error(result.error)
+        return result
+      } finally {
+        if (typeof observation[Symbol.dispose] === 'function') observation[Symbol.dispose]()
+        else if (typeof observation.dispose === 'function') await observation.dispose()
+      }
     },
   }))
 }
