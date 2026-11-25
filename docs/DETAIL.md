@@ -13,12 +13,6 @@ This plugin makes that move possible from the sidebar.
 
 A workspace's ⋯ menu offers **置顶工作区** / **取消置顶**. Pinned workspaces move to the top of the sidebar and stay there across reloads; pinning several keeps the order you pinned them in. The pin set lives in the browser, and only the resulting workspace order is written to the Host — the sidebar renders that order, so a pinned workspace is pinned for the whole profile.
 
-## Recent activity
-
-The sidebar foot gains a clock button beside Settings. It opens a list of conversations grouped by time — 今天 / 昨天 / 最近 7 天 / 更早 — with a search box matching conversation titles and workspace names. Clicking a row opens that conversation.
-
-The panel reads the session list the sidebar already holds, so it adds no Host round-trips and never opens a session just to render it. Subagent children, unsent drafts, and archived conversations are left out, matching what the sidebar itself lists.
-
 ## What it actually does
 
 Because the header directory cannot be rewritten in place, the move is a **safe migration copy**:
