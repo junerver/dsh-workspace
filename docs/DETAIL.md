@@ -13,6 +13,12 @@ This plugin makes that move possible from the sidebar.
 
 A workspace's ⋯ menu offers **置顶工作区** / **取消置顶**. Pinned workspaces move to the top of the sidebar and stay there across reloads; pinning several keeps the order you pinned them in. The pin set lives in the browser, and only the resulting workspace order is written to the Host — the sidebar renders that order, so a pinned workspace is pinned for the whole profile.
 
+## Unread-completion marker on folded workspaces
+
+DSH already draws a green dot on a conversation that finished while you were looking elsewhere. A folded workspace hides its rows, and that signal disappears with them — so the marker moves to the workspace header: a dot when one conversation finished, a count when several did. Expanding the group removes it, because the rows show their own dots again.
+
+The marker reads the same `uiSession.sessionStatus` snapshot the rows read, so the two can never disagree. It is decoration only: `aria-hidden`, and it never intercepts a click.
+
 ## What it actually does
 
 Because the header directory cannot be rewritten in place, the move is a **safe migration copy**:

@@ -28,6 +28,12 @@ A short toast confirms the result at the top of the window, naming the target wo
 
 Open a workspace's `⋯` menu and choose **置顶工作区** (**Pin workspace**) / **取消置顶** (**Unpin**). Pinned workspaces move to the top of the sidebar and stay there across reloads; several pinned workspaces keep the order you pinned them in.
 
+### Unread-completion marker on folded workspaces
+
+DSH already draws a green dot on a conversation that finished while you were looking elsewhere. A folded workspace hides its rows, and that signal disappears with them — so this plugin puts the same marker on the workspace header instead: a dot when one conversation finished, a count when several did. Expanding the group removes it, because the rows show their own dots again.
+
+The marker reads the same `uiSession.sessionStatus` snapshot the rows read, so the two can never disagree. It is decoration only: `aria-hidden`, and it never intercepts a click.
+
 ## How it works
 
 Because the session header cannot be rewritten in place, a move is a **safe migration copy**:

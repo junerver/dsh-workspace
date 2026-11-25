@@ -68,6 +68,16 @@ window.__ModuleLoader__.load({
 .wsm-menu-item:hover{background:var(--dsw-alias-bg-layer-2,#2e3036)}
 .wsm-drop-row{outline:2px solid var(--dsw-alias-brand-primary,#4a9eff) !important;outline-offset:-2px;border-radius:8px;background:var(--dsw-alias-bg-layer-2,#2e3036) !important}
 
+/* Unread-completion marker on a collapsed workspace header.
+   The shipped rows already draw a green dot on a conversation that finished
+   while you were elsewhere; a folded group hides those rows entirely, so the
+   header carries the same signal instead — right after the workspace name. */
+.wsm-group-dot{flex:0 0 auto;width:6px;height:6px;margin-left:6px;border-radius:50%;background:var(--dsw-alias-state-success-primary,#3fb950);pointer-events:none}
+.wsm-group-dot-count{flex:0 0 auto;min-width:16px;height:16px;margin-left:6px;padding:0 4px;box-sizing:border-box;border-radius:999px;background:var(--dsw-alias-state-success-primary,#3fb950);color:#04170c;font:600 10px/16px system-ui,-apple-system,"Segoe UI",sans-serif;text-align:center;pointer-events:none}
+/* The header's text cell is a column so long titles wrap; lay it out as a row
+   while a marker is present so the dot sits beside the name, not under it. */
+.wsm-group-marked{flex-direction:row !important;align-items:center !important;gap:0 !important}
+
 `;
 
     function ensureStyle() {
@@ -180,10 +190,56 @@ window.__ModuleLoader__.load({
       }, h(MoveIcon), h('span', null, '移动到工作区…'));
     }
 
+    /* ------------------ collapsed-group completion -------------------- */
+    // The shipped rows already show a green dot on a conversation that
+    // finished while you were looking elsewhere (`completionUnread`). A
+    // folded group renders no rows at all, so that signal disappears with
+    // them; this marks the header instead. It reads the same status
+    // snapshot the rows read, so the two never disagree.
+    const GROUP_MARK = 'wsm-group-dot';
+    const GROUP_MARK_COUNT = 'wsm-group-dot-count';
+
+    function clearGroupMarks() {
+      const marked = document.querySelectorAll('.' + GROUP_MARK + ',.' + GROUP_MARK_COUNT);
+      for (const node of marked) node.remove();
+      for (const cell of document.querySelectorAll('.wsm-group-marked')) cell.classList.remove('wsm-group-marked');
+    }
+
+    /**
+     * Paint or clear the completion marker on every collapsed workspace header.
+     * Expansion is read from the header's own `aria-expanded`, so this never
+     * depends on the browser's private view store.
+     * @param workspaces - the workspace snapshot rows, in registry order.
+     * @param statuses - the unified session status snapshot.
+     */
+    function paintGroupMarks(workspaces, statuses) {
+      clearGroupMarks();
+      for (const workspace of workspaces) {
+        const sessionIds = Array.isArray(workspace.sessionIds) ? workspace.sessionIds : [];
+        let count = 0;
+        for (const sessionId of sessionIds) {
+          if (statuses.get(sessionId)?.completionUnread === true) count += 1;
+        }
+        if (count === 0) continue;
+        const header = document.querySelector('[data-row-key="workspace:' + String(workspace.workspaceId) + '"]');
+        if (!header) continue;
+        // Only a folded group needs the marker: an open one shows its own rows.
+        if (header.getAttribute('aria-expanded') !== 'false') continue;
+        const dot = document.createElement('span');
+        dot.className = count === 1 ? GROUP_MARK : GROUP_MARK_COUNT;
+        dot.textContent = count === 1 ? '' : String(count > 99 ? '99+' : count);
+        dot.setAttribute('aria-hidden', 'true');
+        // Sit right after the title text, before the hover action strip, so the
+        // marker reads as part of the workspace name rather than floating over it.
+        const title = header.querySelector('[class*="title"]');
+        if (title && title.parentElement) {
+          title.parentElement.classList.add('wsm-group-marked');
+          title.parentElement.insertBefore(dot, title.nextSibling);
+        } else header.appendChild(dot);
+      }
+    }
+
     /* ---------------------- workspace pinning ------------------------- */
-    // Pinned workspaces are reordered to the front through the existing
-    // durable workspace order; the pin set itself is plugin-local, so no
-    // Host state is invented.
     const PIN_STORAGE_KEY = 'dsh.workspaceMove.pinnedWorkspaces';
 
     function readPins() {
@@ -551,6 +607,46 @@ window.__ModuleLoader__.load({
           if (pinTimer !== null) { clearTimeout(pinTimer); pinTimer = null; }
         });
         void applyPinOrder();
+
+        /* --- Collapsed-group completion markers ----------------------- *
+         * Repaint whenever the status snapshot, the workspace list, or the
+         * sidebar's own DOM changes (expanding a group removes its marker,
+         * collapsing one brings it back).                                   */
+        const uiSession = ctx.get('uiSession');
+        let markTimer = null;
+        const scheduleMarks = () => {
+          if (markTimer !== null) return;
+          markTimer = setTimeout(() => {
+            markTimer = null;
+            if (uiSession === undefined) return;
+            let snapshot = { items: [] };
+            try { snapshot = workspaces.list.getSnapshot(); } catch (_) { return; }
+            paintGroupMarks(snapshot.items || [], uiSession.sessionStatus.getSnapshot());
+          }, 60);
+        };
+
+        const statusCleanup = uiSession === undefined
+          ? () => {}
+          : uiSession.sessionStatus.subscribe(scheduleMarks);
+        const listCleanup = workspaces.list.subscribe(scheduleMarks);
+        // Group expansion is the browser's own state, so watch the rows instead
+        // of reaching into its store.
+        const observer = typeof MutationObserver === 'function'
+          ? new MutationObserver(() => { scheduleMarks(); })
+          : null;
+        if (observer !== null) {
+          observer.observe(document.body, {
+            subtree: true, childList: true, attributes: true, attributeFilter: ['aria-expanded'],
+          });
+        }
+        ctx.effect(() => () => {
+          statusCleanup();
+          listCleanup();
+          if (observer !== null) observer.disconnect();
+          if (markTimer !== null) { clearTimeout(markTimer); markTimer = null; }
+          clearGroupMarks();
+        });
+        scheduleMarks();
       },
     };
   },
