@@ -1,0 +1,7 @@
+{
+  "meta": {
+    "title": "Move conversation to workspace",
+    "description": "Drag a conversation from the sidebar onto a directory workspace, or use its ⋯ menu, to migrate it there as a new session and archive the original.",
+    "detail": "docs/DETAIL.md"
+  }
+}
