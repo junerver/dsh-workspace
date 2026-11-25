@@ -1,7 +1,7 @@
 {
   "meta": {
     "title": "Move conversation to workspace",
-    "description": "Drag a conversation from the sidebar onto a directory workspace, or use its ⋯ menu, to migrate it there as a new session and archive the original.",
+    "description": "Drag a conversation from the sidebar onto a directory workspace, or use its ⋯ menu, to migrate it there; also adds workspace pinning and a time-grouped recent-activity panel.",
     "detail": "docs/DETAIL.md"
   }
 }

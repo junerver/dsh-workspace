@@ -17,10 +17,22 @@ This plugin fills that gap.
 
 ## Usage
 
+### Move a conversation between workspaces
+
 - **Drag** — press and drag any conversation row in the sidebar, then move over a target workspace group (its header, or any conversation inside it). The group highlights; release to move.
 - **Menu** — hover the row and click the folder-arrow button, or open the row's `⋯` menu and choose **Move to workspace…**, then pick a workspace.
 
 A short toast confirms the result at the top of the window, naming the target workspace.
+
+### Pin a workspace
+
+Open a workspace's `⋯` menu and choose **置顶工作区** (**Pin workspace**) / **取消置顶** (**Unpin**). Pinned workspaces move to the top of the sidebar and stay there across reloads; several pinned workspaces keep the order you pinned them in.
+
+### Recent activity
+
+The sidebar foot gains a clock button beside Settings. It opens a time-bucketed list of conversations — 今天 / 昨天 / 最近 7 天 / 更早 — with a search box that matches both conversation titles and workspace names. Clicking a row opens that conversation.
+
+The panel reads the session list the sidebar already holds, so it costs no extra Host round-trips and never opens a session just to render it. It skips subagent children, unsent drafts, and archived conversations.
 
 ## How it works
 
@@ -45,15 +57,20 @@ The seed is built from plain JSON values and the migration always cuts at a `tur
 
 ### Client side
 
-`client.js` contributes three slot entries:
+`client.js` contributes these slot entries:
 
 | Slot | Entry | Purpose |
 | --- | --- | --- |
 | `sidebar.workspaces.session.row.action` | `workspace-move` (150) | Hover button on each session row. |
 | `sidebar.workspaces.session.menu.item` | `workspace-move` (520) | `⋯` menu row. |
-| `shell.overlay` | `workspace-move-overlay` (900) | Workspace chooser dialog, toast, and drag hint. |
+| `sidebar.footer.action` | `workspace-move-recent` (40) | Recent-activity trigger beside Settings. |
+| `shell.overlay` | `workspace-move-overlay` (900) | Workspace chooser, recent-activity panel, toast, and drag hint. |
+
+It also registers one structured menu contribution through `ctx.contextMenus` (`workspaceMove.pin`, target `workspace`, order 150) — the same target family ui-workspace uses for rename and delete.
 
 Drag targeting resolves against the sidebar's own structural keys — `data-row-key="session:<id>"` and `data-row-key="workspace:<id>"` — rather than a floating panel, so a narrow window cannot cover the drop targets. The overlay layer is `pointer-events: none`, so it never intercepts the drag.
+
+**Pinning** reorders through `ctx.workspaces.insertBefore`. That call appends when given no anchor, so the pinned block is built by inserting each workspace before the element that currently follows its target slot. The pin set itself is plugin-local (`localStorage`): the Host has no workspace pin concept, and only the resulting order needs to be durable — which is exactly what the sidebar renders.
 
 ## Limitations
 
